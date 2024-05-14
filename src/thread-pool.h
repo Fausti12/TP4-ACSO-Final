@@ -30,13 +30,13 @@ class ThreadPool {
  * to be executed by one of the ThreadPool's threads as soon as
  * all previously scheduled thunks have been handled.
  */
-  void schedule(const std::function<void(void)>& thunk);
+  void schedule(const std::function<void(void)>& thunk);  // va encolando tareas en el vector de tareas.
 
 /**
  * Blocks and waits until all previously scheduled thunks
  * have been executed in full.
  */
-  void wait();
+  void wait(); // espera a que todas las tareas encoladas se hayan ejecutado.
 
 /**
  * Waits for all previously scheduled thunks to execute, and then
