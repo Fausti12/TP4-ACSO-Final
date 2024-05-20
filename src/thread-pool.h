@@ -16,6 +16,7 @@
 #include <vector>      // for vector
 #include <mutex>       // for mutex
 #include <condition_variable>  // for condition_variable
+#include "Semaphore.h"
 
 class ThreadPool {
  public:
@@ -51,10 +52,14 @@ class ThreadPool {
   std::thread dt;                // dispatcher thread handle
   std::vector<std::thread> wts;  // worker thread handles
   std::vector<std::function<void(void)>> tasks_;  // tasks vector
-  std::mutex mutex_;             // mutex para proteger el acceso a las tareas
-  std::condition_variable dt_condition_;  // condition variable para el dispatcher thread
-  std::condition_variable wt_condition_;  // condition variable para los worker threads
-  bool done_ = false;  // flag para indicar que no hay más tareas
+  Semaphore task_sem = Semaphore(0);  // semaphore to control access to the tasks vector
+  Semaphore worker_sem = Semaphore(numThreads);  // semaphore to control access to the worker threads
+  std::mutex dt_mutex;  // mutex to protect the dispatcher thread
+  std::mutex worker_mutex;  // mutex to protect the worker threads
+  std::condition_variable dt_condition;  // condition variable for the dispatcher thread
+  std::condition_variable worker_condition;  // condition variable for the worker threads
+  bool done = false;  // flag to indicate that the ThreadPool is done
+  size_t numThreads;  // number of worker threads
 
 /**
  * ThreadPools are the type of thing that shouldn't be cloneable, since it's
