@@ -14,6 +14,8 @@
 #include <functional>  // for the function template used in the schedule signature
 #include <thread>      // for thread
 #include <vector>      // for vector
+#include <mutex>       // for mutex
+#include <condition_variable>  // for condition_variable
 
 class ThreadPool {
  public:
@@ -48,6 +50,11 @@ class ThreadPool {
  private:
   std::thread dt;                // dispatcher thread handle
   std::vector<std::thread> wts;  // worker thread handles
+  std::vector<std::function<void(void)>> tasks_;  // tasks vector
+  std::mutex mutex_;             // mutex para proteger el acceso a las tareas
+  std::condition_variable dt_condition_;  // condition variable para el dispatcher thread
+  std::condition_variable wt_condition_;  // condition variable para los worker threads
+  bool done_ = false;  // flag para indicar que no hay más tareas
 
 /**
  * ThreadPools are the type of thing that shouldn't be cloneable, since it's
