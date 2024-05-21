@@ -6,7 +6,6 @@
  * and schedules them in a FIFO manner to be executed by a constant number
  * of child threads that exist solely to invoke previously scheduled thunks.
  */
-
 #ifndef _thread_pool_
 #define _thread_pool_
 
@@ -52,13 +51,13 @@ class ThreadPool {
   std::thread dt;                // dispatcher thread handle
   std::vector<std::thread> wts;  // worker thread handles
   std::vector<std::function<void(void)>> tasks_;  // tasks vector
-  Semaphore task_sem = Semaphore(0);  // semaphore to control access to the tasks vector
-  Semaphore worker_sem = Semaphore(numThreads);  // semaphore to control access to the worker threads
+  Semaphore task_sem;  // semaphore to control access to the tasks vector
+  Semaphore worker_sem;  // semaphore to control access to the worker threads
   std::mutex dt_mutex;  // mutex to protect the dispatcher thread
   std::mutex worker_mutex;  // mutex to protect the worker threads
   std::condition_variable dt_condition;  // condition variable for the dispatcher thread
   std::condition_variable worker_condition;  // condition variable for the worker threads
-  bool done = false;  // flag to indicate that the ThreadPool is done
+  int done = 0;  // flag to indicate that the ThreadPool is done
   size_t numThreads;  // number of worker threads
 
 /**
