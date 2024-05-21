@@ -16,6 +16,18 @@
 #include <vector>      // for vector
 #include <mutex>       // for mutex
 #include <condition_variable>  // for condition_variable
+#include "Semaphore.h"
+
+struct Worker
+{ 
+  int id;
+  std::thread wt;
+  std::mutex wt_mutex;
+  std::condition_variable wt_condition;
+  std::condition_variable wt_finish_condition;
+  std::function<void(void)> task;
+  bool busy;
+}typedef worker_t;
 
 class ThreadPool {
  public:
@@ -49,12 +61,20 @@ class ThreadPool {
   
  private:
   std::thread dt;                // dispatcher thread handle
-  std::vector<std::thread> wts;  // worker thread handles
+  std::vector<worker_t> wts;  // worker thread handles
   std::vector<std::function<void(void)>> tasks_;  // tasks vector
-  std::mutex mutex_;             // mutex para proteger el acceso a las tareas
-  std::condition_variable dt_condition_;  // condition variable para el dispatcher thread
-  std::condition_variable wt_condition_;  // condition variable para los worker threads
-  bool done_ = false;  // flag para indicar que no hay más tareas
+
+  Semaphore task_sem;  // semaphore to control access to the tasks vector
+  Semaphore worker_sem;  // semaphore to control access to the worker threads
+  
+  std::mutex dt_mutex;  // mutex to protect the dispatcher thread
+  std::mutex worker_mutex;  // mutex to protect the worker threads
+  std::mutex tasks_mutex;  // mutex to protect the tasks vector
+
+  std::condition_variable dt_condition;  // condition variable for the dispatcher thread
+  std::condition_variable worker_condition;  // condition variable for the worker threads
+
+  bool done_;  // flag to indicate that the ThreadPool is done
 
 /**
  * ThreadPools are the type of thing that shouldn't be cloneable, since it's
@@ -68,5 +88,8 @@ class ThreadPool {
   ThreadPool(const ThreadPool& original) = delete;
   ThreadPool& operator=(const ThreadPool& rhs) = delete;
 };
+
+
+
 
 #endif

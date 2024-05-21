@@ -3,93 +3,135 @@
  * --------------------
  * Presents the implementation of the ThreadPool class.
  */
-
 #include "thread-pool.h"
 using namespace std;
 
-ThreadPool::ThreadPool(size_t numThreads) : wts(numThreads) {
-    // create the worker threads
+ThreadPool::ThreadPool(size_t numThreads) : wts(numThreads), done_(false) {
+    // Create the dispatcher thread
+    dt = thread([this] {
+        while (true) {
+            unique_lock<mutex> ul(dt_mutex);      // VER DE APLICAR UN SEMÁFORO ACÁ
+            // Check if the ThreadPool is done
+            if (done_) break;
+         
+            if (tasks_.empty()) {   // No tasks to do
+                printf("No tasks to do\n");
+                dt_condition.notify_all();
+            } else {                // Get the task
+                auto task_for_worker = tasks_.front();
+                tasks_.erase(tasks_.begin());
+                ul.unlock();
+
+                // Put a worker thread to work
+                for (size_t i = 0; i < wts.size(); i++) {
+                    if (!wts[i].busy && wts[i].task == nullptr) {  // Find a free worker thread
+                        wts[i].task = task_for_worker;
+                        wts[i].busy = true;
+                        wts[i].wt_condition.notify_one();
+                        break;
+                    }
+                    if (i == wts.size() - 1) {  // All worker threads are busy, put the task back
+                        ul.lock();
+                        tasks_.push_back(task_for_worker);
+                        ul.unlock();
+                        task_sem.signal();
+                    }
+                }
+                ul.lock();
+            }
+            ul.unlock();
+            //task_sem.wait();              // REVISARRRRR
+        }
+    });
+
+    // Create the worker threads
     for (size_t i = 0; i < numThreads; i++) {
-        wts[i] = thread([this] {
+        wts[i].id = i;
+        wts[i].busy = false;
+        wts[i].task = nullptr;
+        wts[i].wt = thread([this, i] {
             while (true) {
-                // wait for the dispatcher to signal that there is a task
-                unique_lock<mutex> lk(mutex_);
-                dt_condition_.wait(lk, [this] { return !tasks_.empty() || done_; });
-                // if there are no tasks and done is true, exit the thread
-                if (tasks_.empty() && done_) return;
-                // get the task
-                auto task = tasks_.back();
-                tasks_.pop_back();
-                // signal the dispatcher that the task has been taken
-                dt_condition_.notify_one();
-                // execute the task
-                task();
+                unique_lock<mutex> ul(wts[i].wt_mutex);
+                
+                // Check if the ThreadPool is done
+                if (done_ && wts[i].task == nullptr) break;
+
+                // Wait for a task
+                printf("Worker thread %d waiting\n", i);
+                wts[i].wt_condition.wait(ul, [this, i] {
+                    return wts[i].task != nullptr || done_;
+                });
+                printf("Worker thread %d working\n", i);
+                
+                // Check if the ThreadPool is done
+                if (done_ && wts[i].task == nullptr) break;
+                ul.unlock();
+
+                // Execute the task
+                if (wts[i].task) {
+                    wts[i].task();  // Execute the task
+                    ul.lock();
+                    wts[i].task = nullptr;
+                    wts[i].busy = false;
+                    wts[i].wt_finish_condition.notify_one();
+                }
+                ul.unlock();
             }
         });
     }
-
-    // create the dispatcher thread
-    dt = thread([this] {
-        // El hilo dispatcher debería ejecutar en un loop. Es decir, en cada iteración, debería
-        // dormir hasta que schedule le indique que se ha añadido algo a la cola. Luego,
-        // esperaría a que un worker esté disponible, lo seleccionaría, lo marcaría como no
-        // disponible, extraería una función de la cola, pondría una copia de esa función en un
-        // lugar donde el worker pueda acceder a ella y luego señalaría al trabajador para que
-        // la ejecutara.
-        while (true) {
-            // wait for a task to be scheduled
-            unique_lock<mutex> lk(mutex_);
-            dt_condition_.wait(lk, [this] { return !tasks_.empty() || done_; });
-            // if there are no tasks and done is true, exit the thread
-            if (tasks_.empty() && done_) return;
-            // signal a worker thread to execute the task
-            wt_condition_.notify_one();
-
-            // wait for the worker to take the task
-            dt_condition_.wait(lk, [this] { return tasks_.empty(); });
-
-            // if there are no tasks, exit the thread
-            if (tasks_.empty()) return;
-        }
-    });    
 }
 
 void ThreadPool::schedule(const function<void(void)>& thunk) {
-    // add the thunk to the tasks vector
+    lock_guard<mutex> lg(dt_mutex);
     tasks_.push_back(thunk);
-    // notify the dispatcher thread
-    dt_condition_.notify_one(); 
+    task_sem.signal();
+    printf("Task scheduled\n");
 }
 
 void ThreadPool::wait() {
-    // wait for all tasks to be executed
-    unique_lock<mutex> lk(mutex_);
-    dt_condition_.wait(lk, [this] { return tasks_.empty(); });
+    printf("Wait function called\n");
+    unique_lock<mutex> ul(dt_mutex);
+    // Wait for all tasks to be done
+    printf("Waiting for all tasks to be done\n");
+    dt_condition.wait(ul, [this] {
+        return tasks_.empty();
+    });
 
-    // signal the worker threads to exit
-    done_ = true;
-    wt_condition_.notify_all();
+    printf("All tasks done\n");
 
-    // wait for the worker threads to exit
-    lk.unlock();
-    for (auto& wt : wts) {
-        wt.join();
+    ul.unlock();
+
+    for (size_t i = 0; i < wts.size(); i++) {
+        // Wait for all worker threads to be done
+        if (wts[i].busy) {
+            unique_lock<mutex> ul(wts[i].wt_mutex);
+            wts[i].wt_finish_condition.wait(ul, [this, i] {
+                return !wts[i].busy;
+            });
+
+            ul.unlock();
+        }
     }
-
-    // wait for the dispatcher thread to exit
-    dt.join();
-
-    // reset the done flag
-    done_ = false;
-
-    // notify the caller that all tasks have been executed
-    dt_condition_.notify_all();
-
-    // clear the tasks vector
-    tasks_.clear();
-
-    // notify the caller that the ThreadPool is ready to be used again
-    dt_condition_.notify_all();
 }
 
-ThreadPool::~ThreadPool() {}
+ThreadPool::~ThreadPool() {
+    printf("Destructor called\n");
+    // Signal the dispatcher thread to finish
+    unique_lock<mutex> dt_lock(dt_mutex);
+    done_ = true;
+    task_sem.signal();
+    dt_condition.notify_all();
+    dt_lock.unlock();
+
+    
+    dt.join();
+
+    // Signal the worker threads to finish
+    for (size_t i = 0; i < wts.size(); i++) {
+        unique_lock<mutex> wt_lock(wts[i].wt_mutex);
+        wts[i].wt_condition.notify_one();
+        wt_lock.unlock();
+
+        wts[i].wt.join();
+    }
+}
