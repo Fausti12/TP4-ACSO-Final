@@ -68,11 +68,8 @@ class ThreadPool {
   Semaphore worker_sem;  // semaphore to control access to the worker threads
   
   std::mutex dt_mutex;  // mutex to protect the dispatcher thread
-  std::mutex worker_mutex;  // mutex to protect the worker threads
-  std::mutex tasks_mutex;  // mutex to protect the tasks vector
 
   std::condition_variable dt_condition;  // condition variable for the dispatcher thread
-  std::condition_variable worker_condition;  // condition variable for the worker threads
 
   bool done_;  // flag to indicate that the ThreadPool is done
 
