@@ -13,12 +13,11 @@ ThreadPool::ThreadPool(size_t numThreads) : wts(numThreads), done_(false) {
             // Wait for a task (or the wait function or the destructor to be called)
             task_sem.wait();
 
-            unique_lock<mutex> ul(dt_mutex);
             // Check if the ThreadPool is done
             if (done_){
-                ul.unlock();
-                break;
+            break;
             }
+            unique_lock<mutex> ul(dt_mutex);
             if (tasks_.empty()) {   // No tasks to do, notify the wait function
                 dt_condition.notify_all();
                 ul.unlock();
@@ -112,10 +111,8 @@ void ThreadPool::wait() {
 ThreadPool::~ThreadPool() {
     ThreadPool::wait();
     // Signal the dispatcher thread to finish
-    unique_lock<mutex> dt_lock(dt_mutex);
     task_sem.signal();
-    done_ = true;
-    dt_lock.unlock();
+    done_ = true;     
     
     dt.join();
 
