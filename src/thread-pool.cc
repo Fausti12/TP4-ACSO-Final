@@ -15,10 +15,13 @@ ThreadPool::ThreadPool(size_t numThreads) : wts(numThreads), done_(false) {
 
             unique_lock<mutex> ul(dt_mutex);
             // Check if the ThreadPool is done
-            if (done_) break;
-        
+            if (done_){
+                ul.unlock();
+                break;
+            }
             if (tasks_.empty()) {   // No tasks to do, notify the wait function
                 dt_condition.notify_all();
+                ul.unlock();
             } else {               
                 // Get the task
                 auto task_for_worker = tasks_.front();
@@ -67,13 +70,12 @@ ThreadPool::ThreadPool(size_t numThreads) : wts(numThreads), done_(false) {
                 // Execute the task
                 if (wts[i].task) {
                     wts[i].task();  // Execute the task
-                    ul.lock();      // Maybe the lock in this if statement is not necessary
+                    ul.lock();      
                     wts[i].task = nullptr;
                     wts[i].busy = false;
                     wts[i].wt_finish_condition.notify_one();
-                    ul.unlock();    // Maybe the unlock in this if statement is not necessary
+                    ul.unlock();    
                 }
-                //ul.unlock();
             }
         });
     }
@@ -93,7 +95,6 @@ void ThreadPool::wait() {
     dt_condition.wait(ul, [this] {  // Check if there are tasks to do
         return tasks_.empty();
     });
-
     ul.unlock();
 
     for (size_t i = 0; i < wts.size(); i++) {
@@ -114,16 +115,13 @@ ThreadPool::~ThreadPool() {
     unique_lock<mutex> dt_lock(dt_mutex);
     task_sem.signal();
     done_ = true;
-    //dt_condition.notify_all();   // idk if this is necessary
     dt_lock.unlock();
     
     dt.join();
 
     // Signal the worker threads to finish
     for (size_t i = 0; i < wts.size(); i++) {
-        unique_lock<mutex> wt_lock(wts[i].wt_mutex);
         wts[i].wt_condition.notify_one();
-        wt_lock.unlock();
     }
     for (size_t i = 0; i < wts.size(); i++) {
         wts[i].wt.join();
