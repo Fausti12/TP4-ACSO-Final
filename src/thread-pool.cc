@@ -99,25 +99,22 @@ void ThreadPool::wait() {
     for (size_t i = 0; i < wts.size(); i++) {
         // Wait for all worker threads to be done
         if (wts[i].busy) {
-            printf("Worker %d BUSY!! Waiting for worker thread to finish\n", i);
             unique_lock<mutex> ul(wts[i].wt_mutex);
             wts[i].wt_finish_condition.wait(ul, [this, i] {
                 return !wts[i].busy;
             });
-
             ul.unlock();
         }
     }
 }
 
 ThreadPool::~ThreadPool() {
-    printf("Destructor called\n");
     ThreadPool::wait();
     // Signal the dispatcher thread to finish
     unique_lock<mutex> dt_lock(dt_mutex);
-    done_ = true;
     task_sem.signal();
-    dt_condition.notify_all();
+    done_ = true;
+    //dt_condition.notify_all();   // idk if this is necessary
     dt_lock.unlock();
     
     dt.join();
